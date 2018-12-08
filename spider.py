@@ -62,8 +62,9 @@ def send_email():
         smtpObj.login(config.email_sender, config.email_password)
         smtpObj.sendmail(sender, receivers, message.as_string())
         print("邮件发送成功")
-    except smtplib.SMTPException:
+    except smtplib.SMTPException as e:
         print("Error: 无法发送邮件")
+        traceback.print_exc()
 
 
 def get_web_info():
@@ -119,9 +120,22 @@ def get_web_info():
                                         print("----- 日期不符合要求，跳过")
                                         continue
                                 else:
-                                    need_next_page = False
-                                    print("----- 没有找到日期数据，跳过")
-                                    continue
+                                    date = re.search(r'(\d{1,2})-(\d{1,2})', str(article.parent))
+                                    if not date:
+                                        date = re.search(r'(\d{1,2})-(\d{1,2})', str(article.parent.parent))
+                                    if not date:
+                                        date = re.search(r'(\d{1,2})-(\d{1,2})',
+                                                         str(article.parent.parent.parent))
+                                    if date:
+                                        if not accept_date(
+                                                [datetime.datetime.now().year, int(date.group(1)), int(date.group(2))]):
+                                            need_next_page = False
+                                            print("----- 日期不符合要求，跳过")
+                                            continue
+                                    else:
+                                        need_next_page = False
+                                        print("----- 没有找到日期数据，跳过")
+                                        continue
                                 matched = []
                                 time.sleep(config.web_interval_seconds)
                                 article_web = requests.get(target_website)
@@ -137,8 +151,9 @@ def get_web_info():
                                         matched.append(word)
                                 if len(matched) > 0:
                                     send_data.append([matched, target_website])
-                            except:
+                            except Exception as e:
                                 print("--- 文章网页 %s 访问出错！" % target_website)
+                                traceback.print_exc()
                         else:
                             need_next_page = False
                     print("-      其中有%d篇新文章" % count)
@@ -156,6 +171,7 @@ def get_web_info():
     except:
         print("get_web_info()运行出错！")
         time.sleep(config.web_interval_seconds)
+        traceback.print_exc()
 
 
 if __name__ == '__main__':

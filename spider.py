@@ -139,6 +139,8 @@ def get_web_info():
                                     send_data.append([matched, target_website])
                             except:
                                 print("--- 文章网页 %s 访问出错！" % target_website)
+                        else:
+                            need_next_page = False
                     print("-      其中有%d篇新文章" % count)
                     if need_next_page:
                         if len(next_page_href) != 1:

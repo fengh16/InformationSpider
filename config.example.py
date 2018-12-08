@@ -14,5 +14,7 @@ words = [
     '实验室'
 ]
 
+time_start = '2018-12-06'
+
 web_interval_seconds = 6.3
 query_interval_seconds = 300

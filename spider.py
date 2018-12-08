@@ -7,6 +7,8 @@ from email.header import Header
 import os
 import json
 import datetime
+import re
+import traceback
 from web_join import myjoin
 
 cache_file = 'cache.txt'
@@ -17,6 +19,15 @@ if os.path.exists(cache_file):
         for i in t:
             got_article_data.add(i)
 send_data = []
+
+start_time = [int(i) for i in config.time_start.split('-')]
+
+
+def accept_date(k):
+    for i in range(3):
+        if k[i] < start_time[i]:
+            return False
+    return True
 
 
 def send_email():
@@ -59,64 +70,90 @@ def get_web_info():
     global got_article_data, send_data
     try:
         for website in config.websites:
-            print("正在查找网页 %s" % website)
-            try:
-                a = requests.get(website)
-                a.encoding = 'utf-8'
-                if a.status_code != 200:
-                    print("- 无法访问网页 %s" % website)
-                    continue
-                # soup = BeautifulSoup(a.text, "html.parser")
-                # WTF什么垃圾政府网页……解析不了……垃圾…………………………………………………………………………………………
-                soup = BeautifulSoup(a.text, "html5lib")
-                list_data = soup.find_all('div', class_='zl_tabList')
-                if len(list_data) == 0:
-                    list_data = soup.find_all('div', class_='newsList_01')
+            need_next_page = True
+            while need_next_page:
+                print("正在查找网页 %s" % website)
+                try:
+                    a = requests.get(website)
+                    a.encoding = 'utf-8'
+                    if a.status_code != 200:
+                        print("- 无法访问网页 %s" % website)
+                        continue
+                    # soup = BeautifulSoup(a.text, "html.parser")
+                    # WTF什么垃圾政府网页……解析不了……垃圾…………………………………………………………………………………………
+                    soup = BeautifulSoup(a.text, "html5lib")
+                    next_page_href = soup.find_all('a', text='下一页')
+                    list_data = soup.find_all('div', class_='zl_tabList')
                     if len(list_data) == 0:
-                        print("- 网页 %s 没有需要的数据" % website)
-                        continue
-                    articles_list = list_data[0].find_all('a')
-                else:
-                    articles_list = list_data[0].find_all('ul')
-                    if len(articles_list) == 0:
-                        print("- 网页 %s 没有需要的数据" % website)
-                        continue
-                    if len(articles_list) == 1:
-                        articles_list = articles_list[0].find_all('a')
-                    else:
+                        list_data = soup.find_all('div', class_='newsList_01')
+                        if len(list_data) == 0:
+                            print("- 网页 %s 没有需要的数据" % website)
+                            continue
                         articles_list = list_data[0].find_all('a')
-                print("- 找到了文章列表，共%d篇" % len(articles_list))
-                count = 0
-                for article in articles_list:
-                    target_website = myjoin(website, article.get('href'))
-                    if target_website not in got_article_data:
-                        try:
-                            time.sleep(config.web_interval_seconds)
-                            print("--- 正在检查文章 %s" % target_website)
-                            count += 1
-                            got_article_data.add(target_website)
-                            matched = []
-                            article_web = requests.get(target_website)
-                            article_web.encoding = 'utf-8'
-                            soup = BeautifulSoup(article_web.text, "html.parser")
-                            data = soup.find_all('div', class_='mainContent')
-                            if len(data) == 0:
-                                print("--- 文章网页 %s 格式不对！" % target_website)
-                                continue
-                            data = data[0].get_text()
-                            for word in config.words:
-                                if word in data:
-                                    matched.append(word)
-                            if len(matched) > 0:
-                                send_data.append([matched, target_website])
-                        except:
-                            print("--- 文章网页 %s 访问出错！" % target_website)
-                print("-      其中有%d篇新文章" % count)
-                time.sleep(config.web_interval_seconds)
-            except:
-                print("- 访问网站 %s 出错" % website)
+                    else:
+                        articles_list = list_data[0].find_all('ul')
+                        if len(articles_list) == 0:
+                            print("- 网页 %s 没有需要的数据" % website)
+                            continue
+                        if len(articles_list) == 1:
+                            articles_list = articles_list[0].find_all('a')
+                        else:
+                            articles_list = list_data[0].find_all('a')
+                    print("- 找到了文章列表，共%d篇" % len(articles_list))
+                    count = 0
+                    for article in articles_list:
+                        target_website = myjoin(website, article.get('href'))
+                        if target_website not in got_article_data:
+                            try:
+                                print("--- 正在检查文章 %s" % target_website)
+                                count += 1
+                                got_article_data.add(target_website)
+                                date = re.search(r'(\d{4})-(\d{1,2})-(\d{1,2})', str(article.parent))
+                                if not date:
+                                    date = re.search(r'(\d{4})-(\d{1,2})-(\d{1,2})', str(article.parent.parent))
+                                if not date:
+                                    date = re.search(r'(\d{4})-(\d{1,2})-(\d{1,2})', str(article.parent.parent.parent))
+                                if date:
+                                    if not accept_date([int(i) for i in [date.group(1), date.group(2), date.group(3)]]):
+                                        need_next_page = False
+                                        print("----- 日期不符合要求，跳过")
+                                        continue
+                                else:
+                                    need_next_page = False
+                                    print("----- 没有找到日期数据，跳过")
+                                    continue
+                                matched = []
+                                time.sleep(config.web_interval_seconds)
+                                article_web = requests.get(target_website)
+                                article_web.encoding = 'utf-8'
+                                soup = BeautifulSoup(article_web.text, "html.parser")
+                                data = soup.find_all('div', class_='mainContent')
+                                if len(data) == 0:
+                                    print("--- 文章网页 %s 格式不对！" % target_website)
+                                    continue
+                                data = data[0].get_text()
+                                for word in config.words:
+                                    if word in data:
+                                        matched.append(word)
+                                if len(matched) > 0:
+                                    send_data.append([matched, target_website])
+                            except:
+                                print("--- 文章网页 %s 访问出错！" % target_website)
+                    print("-      其中有%d篇新文章" % count)
+                    if need_next_page:
+                        if len(next_page_href) != 1:
+                            print("查找下一页标签出错！")
+                        else:
+                            website = myjoin(website, next_page_href[0].get('href'))
+                            print("开始查找下一页，网址 %s" % website)
+                    time.sleep(config.web_interval_seconds)
+                except Exception as e:
+                    print("- 访问网站 %s 出错" % website)
+                    traceback.print_exc()
+                    time.sleep(config.web_interval_seconds)
     except:
         print("get_web_info()运行出错！")
+        time.sleep(config.web_interval_seconds)
 
 
 if __name__ == '__main__':
